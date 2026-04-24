@@ -154,7 +154,7 @@ class ClockOverlayService : Service() {
             Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle("阿刁时钟运行中")
                 .setContentText("双击悬浮窗关闭")
-                .setSmallIcon(android.R.drawable.ic_menu_recent)
+                .setSmallIcon(R.mipmap.ic_launcher)
                 .setOngoing(true)
                 .build()
         } else {
@@ -162,7 +162,7 @@ class ClockOverlayService : Service() {
             Notification.Builder(this)
                 .setContentTitle("阿刁时钟运行中")
                 .setContentText("双击悬浮窗关闭")
-                .setSmallIcon(android.R.drawable.ic_menu_recent)
+                .setSmallIcon(R.mipmap.ic_launcher)
                 .setOngoing(true)
                 .build()
         }
