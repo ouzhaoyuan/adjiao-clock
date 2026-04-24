@@ -34,34 +34,34 @@ jobs:
         id: sign_apk
         with:
           releaseDirectory: app/build/outputs/apk/release
-          signingKeyBase64: ${{ secrets.SIGNING_KEY_BASE64 }}
-          alias: ${{ secrets.KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
+          signingKeyBase64: \${{ secrets.SIGNING_KEY_BASE64 }}
+          alias: \${{ secrets.KEY_ALIAS }}
+          keyStorePassword: \${{ secrets.KEY_STORE_PASSWORD }}
+          keyPassword: \${{ secrets.KEY_PASSWORD }}
         env:
           BUILD_TOOLS_VERSION: "34.0.0"
 
       - name: Rename APK
         run: |
-          SIGNED="${{ steps.sign_apk.outputs.signedReleaseFile }}"
+          SIGNED="\${{ steps.sign_apk.outputs.signedReleaseFile }}"
           DIR=$(dirname "$SIGNED")
-          cp "$SIGNED" "$DIR/AdjiaoClock-v1.3.0.apk"
-          echo "apk_path=$DIR/AdjiaoClock-v1.3.0.apk" >> $GITHUB_ENV
+          cp "$SIGNED" "$DIR/AdjiaoClock-v1.4.0.apk"
+          echo "apk_path=$DIR/AdjiaoClock-v1.4.0.apk" >> $GITHUB_ENV
 
       - name: Upload APK to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.3.0
-          name: "阿刁时钟 v1.3.0"
+          tag_name: v1.4.0
+          name: "阿刁时钟 v1.4.0"
           body: |
-            ## 阿刁时钟 v1.3.0 - 悬浮实时毫秒时钟
+            ## 阿刁时钟 v1.4.0 - 悬浮实时毫秒时钟
 
             - 实时显示时间 HH:mm:ss.SSS（毫秒级）
             - 零按钮设计，打开即显示悬浮窗
-            - 双击悬浮窗关闭
+            - 拖动移动位置，双击关闭
             - 宽度自适应内容，紧凑不浪费屏幕
             - 半透明背景，等宽字体防闪烁
           files: |
-            ${{ env.apk_path }}
+            \${{ env.apk_path }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}

@@ -29,14 +29,22 @@ class ClockOverlayService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val REFRESH_INTERVAL_MS = 16L
         private const val DOUBLE_TAP_TIMEOUT = 400L
-        // Fixed-length display string to prevent width flicker
         private const val CLOCK_TEMPLATE = "00:00:00.000"
+        private const val TOUCH_SLOP = 10 // px threshold: drag vs tap
     }
 
     private var windowManager: WindowManager? = null
     private var overlayView: View? = null
     private var clockTextView: TextView? = null
     private var handler: Handler? = null
+    private var layoutParams: WindowManager.LayoutParams? = null
+
+    // Drag state
+    private var isDragging = false
+    private var downRawX = 0f
+    private var downRawY = 0f
+
+    // Double-tap state
     private var lastTapTime: Long = 0
     private var tapCount: Int = 0
 
@@ -93,9 +101,7 @@ class ClockOverlayService : Service() {
                 (10 * density).toInt(),
                 (4 * density).toInt()
             )
-            setBackgroundColor(0xB3000000.toInt()) // 70% opacity black
-            // Measure with template to get stable width, set as minimum
-            // so even if content changes slightly, the view won't resize
+            setBackgroundColor(0xB3000000.toInt())
             measure(
                 View.MeasureSpec.UNSPECIFIED,
                 View.MeasureSpec.UNSPECIFIED
@@ -104,8 +110,7 @@ class ClockOverlayService : Service() {
         }
         container.addView(clockTextView)
 
-        // WRAP_CONTENT: width auto-fits to text content
-        val params = WindowManager.LayoutParams(
+        layoutParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -113,33 +118,63 @@ class ClockOverlayService : Service() {
                     or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            x = 0
+            gravity = Gravity.TOP or Gravity.START
+            // Center horizontally on screen
+            val screenWidth = resources.displayMetrics.widthPixels
+            val viewWidth = clockTextView!!.measuredWidth + (20 * density).toInt()
+            x = (screenWidth - viewWidth) / 2
             y = (60 * density).toInt()
         }
 
-        // Double-tap to close
+        // Touch: drag + double-tap close
         container.setOnTouchListener { _, event ->
+            val params = layoutParams ?: return@setOnTouchListener false
+
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    val now = System.currentTimeMillis()
-                    tapCount++
-                    if (tapCount == 1) {
-                        lastTapTime = now
-                        handler?.postDelayed({
-                            if (tapCount == 1) {
-                                tapCount = 0
-                            }
-                        }, DOUBLE_TAP_TIMEOUT)
-                    } else if (tapCount == 2) {
-                        if (now - lastTapTime < DOUBLE_TAP_TIMEOUT) {
-                            tapCount = 0
-                            stopSelf()
-                            return@setOnTouchListener true
-                        }
-                        tapCount = 1
-                        lastTapTime = now
+                    isDragging = false
+                    downRawX = event.rawX
+                    downRawY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - downRawX
+                    val dy = event.rawY - downRawY
+                    if (!isDragging && (Math.abs(dx) > TOUCH_SLOP || Math.abs(dy) > TOUCH_SLOP)) {
+                        isDragging = true
                     }
+                    if (isDragging) {
+                        params.x += dx.toInt()
+                        params.y += dy.toInt()
+                        windowManager?.updateViewLayout(overlayView, params)
+                        downRawX = event.rawX
+                        downRawY = event.rawY
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (!isDragging) {
+                        // It's a tap — check double-tap
+                        val now = System.currentTimeMillis()
+                        tapCount++
+                        if (tapCount == 1) {
+                            lastTapTime = now
+                            handler?.postDelayed({
+                                if (tapCount == 1) {
+                                    tapCount = 0
+                                }
+                            }, DOUBLE_TAP_TIMEOUT)
+                        } else if (tapCount >= 2) {
+                            if (now - lastTapTime < DOUBLE_TAP_TIMEOUT) {
+                                tapCount = 0
+                                stopSelf()
+                                return@setOnTouchListener true
+                            }
+                            tapCount = 1
+                            lastTapTime = now
+                        }
+                    }
+                    isDragging = false
                     true
                 }
             }
@@ -148,7 +183,7 @@ class ClockOverlayService : Service() {
 
         overlayView = container
         try {
-            windowManager?.addView(overlayView, params)
+            windowManager?.addView(overlayView, layoutParams)
         } catch (e: Exception) {
             // Permission not granted
         }
@@ -161,6 +196,7 @@ class ClockOverlayService : Service() {
         overlayView = null
         clockTextView = null
         windowManager = null
+        layoutParams = null
     }
 
     private fun updateClock() {
@@ -191,7 +227,7 @@ class ClockOverlayService : Service() {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle("阿刁时钟运行中")
-                .setContentText("双击悬浮窗关闭")
+                .setContentText("拖动移动，双击关闭")
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setOngoing(true)
                 .build()
@@ -199,7 +235,7 @@ class ClockOverlayService : Service() {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
                 .setContentTitle("阿刁时钟运行中")
-                .setContentText("双击悬浮窗关闭")
+                .setContentText("拖动移动，双击关闭")
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setOngoing(true)
                 .build()
