@@ -29,6 +29,8 @@ class ClockOverlayService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val REFRESH_INTERVAL_MS = 16L
         private const val DOUBLE_TAP_TIMEOUT = 400L
+        // Fixed-length display string to prevent width flicker
+        private const val CLOCK_TEMPLATE = "00:00:00.000"
     }
 
     private var windowManager: WindowManager? = null
@@ -56,7 +58,6 @@ class ClockOverlayService : Service() {
         createNotificationChannel()
         val notification = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            // Android 14+: must specify foregroundServiceType
             startForeground(NOTIFICATION_ID, notification,
                 android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
@@ -79,30 +80,33 @@ class ClockOverlayService : Service() {
 
         val density = resources.displayMetrics.density
 
-        // Use a FrameLayout as container for reliable touch handling
         val container = FrameLayout(this)
 
         clockTextView = TextView(this).apply {
-            text = "00:00:00.000"
+            text = CLOCK_TEMPLATE
             textSize = 14f
             setTextColor(0xFFFFFFFF.toInt())
             typeface = Typeface.MONOSPACE
             setPadding(
-                (12 * density).toInt(),
-                (6 * density).toInt(),
-                (12 * density).toInt(),
-                (6 * density).toInt()
+                (10 * density).toInt(),
+                (4 * density).toInt(),
+                (10 * density).toInt(),
+                (4 * density).toInt()
             )
             setBackgroundColor(0xB3000000.toInt()) // 70% opacity black
+            // Measure with template to get stable width, set as minimum
+            // so even if content changes slightly, the view won't resize
+            measure(
+                View.MeasureSpec.UNSPECIFIED,
+                View.MeasureSpec.UNSPECIFIED
+            )
+            minWidth = measuredWidth
         }
         container.addView(clockTextView)
 
-        // 50% screen width
-        val displayMetrics = resources.displayMetrics
-        val overlayWidth = (displayMetrics.widthPixels * 0.5).toInt()
-
+        // WRAP_CONTENT: width auto-fits to text content
         val params = WindowManager.LayoutParams(
-            overlayWidth,
+            WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
@@ -111,10 +115,10 @@ class ClockOverlayService : Service() {
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             x = 0
-            y = (80 * density).toInt()
+            y = (60 * density).toInt()
         }
 
-        // Double-tap to close: use ACTION_DOWN + tap counting
+        // Double-tap to close
         container.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
@@ -122,7 +126,6 @@ class ClockOverlayService : Service() {
                     tapCount++
                     if (tapCount == 1) {
                         lastTapTime = now
-                        // Post a delayed check: if no second tap within timeout, reset
                         handler?.postDelayed({
                             if (tapCount == 1) {
                                 tapCount = 0
@@ -130,7 +133,6 @@ class ClockOverlayService : Service() {
                         }, DOUBLE_TAP_TIMEOUT)
                     } else if (tapCount == 2) {
                         if (now - lastTapTime < DOUBLE_TAP_TIMEOUT) {
-                            // Double tap confirmed — close
                             tapCount = 0
                             stopSelf()
                             return@setOnTouchListener true
