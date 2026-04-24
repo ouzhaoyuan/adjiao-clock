@@ -45,22 +45,25 @@ jobs:
         run: |
           SIGNED="${{ steps.sign_apk.outputs.signedReleaseFile }}"
           DIR=$(dirname "$SIGNED")
-          cp "$SIGNED" "$DIR/AdjiaoClock-v1.1.0.apk"
-          echo "apk_path=$DIR/AdjiaoClock-v1.1.0.apk" >> $GITHUB_ENV
+          cp "$SIGNED" "$DIR/AdjiaoClock-v1.2.0.apk"
+          echo "apk_path=$DIR/AdjiaoClock-v1.2.0.apk" >> $GITHUB_ENV
 
       - name: Upload APK to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.1.0
-          name: "阿刁时钟 v1.1.0"
+          tag_name: v1.2.0
+          name: "阿刁时钟 v1.2.0"
           body: |
-            ## 阿刁时钟 - 悬浮实时毫秒时钟
+            ## 阿刁时钟 v1.2.0 - 悬浮实时毫秒时钟
 
             - 实时显示时间 HH:mm:ss.SSS（毫秒级）
             - 零按钮设计，打开即显示悬浮窗
             - 双击悬浮窗关闭
             - 50%屏幕宽度，半透明背景
             - 等宽字体，防闪烁
+            - 修复 Android 14+ 前台服务崩溃
+            - 修复授权后需手动重新打开
+            - 修复 dp/px 单位问题
           files: |
             ${{ env.apk_path }}
         env:

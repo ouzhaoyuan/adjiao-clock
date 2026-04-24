@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.graphics.PixelFormat
+import android.graphics.Typeface
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -14,6 +15,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.TextView
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -25,8 +27,8 @@ class ClockOverlayService : Service() {
     companion object {
         private const val CHANNEL_ID = "adjiao_clock_channel"
         private const val NOTIFICATION_ID = 1
-        private const val REFRESH_INTERVAL_MS = 16L // ~60fps, smooth ms display
-        private const val DOUBLE_TAP_TIMEOUT = 300L // ms between double taps
+        private const val REFRESH_INTERVAL_MS = 16L
+        private const val DOUBLE_TAP_TIMEOUT = 400L
     }
 
     private var windowManager: WindowManager? = null
@@ -34,6 +36,7 @@ class ClockOverlayService : Service() {
     private var clockTextView: TextView? = null
     private var handler: Handler? = null
     private var lastTapTime: Long = 0
+    private var tapCount: Int = 0
 
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.US).apply {
         timeZone = TimeZone.getDefault()
@@ -51,7 +54,14 @@ class ClockOverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification())
+        val notification = buildNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // Android 14+: must specify foregroundServiceType
+            startForeground(NOTIFICATION_ID, notification,
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
         handler = Handler(Looper.getMainLooper())
         showOverlay()
         handler?.post(updateRunnable)
@@ -67,14 +77,25 @@ class ClockOverlayService : Service() {
     private fun showOverlay() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
+        val density = resources.displayMetrics.density
+
+        // Use a FrameLayout as container for reliable touch handling
+        val container = FrameLayout(this)
+
         clockTextView = TextView(this).apply {
             text = "00:00:00.000"
-            textSize = 16f
+            textSize = 14f
             setTextColor(0xFFFFFFFF.toInt())
-            setTypeface(android.graphics.Typeface.MONOSPACE)
-            setPadding(16, 8, 16, 8)
-            setBackgroundColor(0xB3000000.toInt()) // 70% black = 30% transparent
+            typeface = Typeface.MONOSPACE
+            setPadding(
+                (12 * density).toInt(),
+                (6 * density).toInt(),
+                (12 * density).toInt(),
+                (6 * density).toInt()
+            )
+            setBackgroundColor(0xB3000000.toInt()) // 70% opacity black
         }
+        container.addView(clockTextView)
 
         // 50% screen width
         val displayMetrics = resources.displayMetrics
@@ -85,34 +106,49 @@ class ClockOverlayService : Service() {
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                    or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-                    or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             x = 0
-            y = 100 // slight offset from top
+            y = (80 * density).toInt()
         }
 
-        // Double-tap to close
-        clockTextView?.setOnTouchListener { _, event ->
-            if (event.action == MotionEvent.ACTION_DOWN) {
-                val now = System.currentTimeMillis()
-                if (now - lastTapTime < DOUBLE_TAP_TIMEOUT) {
-                    // Double tap detected - close overlay
-                    stopSelf()
-                    return@setOnTouchListener true
+        // Double-tap to close: use ACTION_DOWN + tap counting
+        container.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    val now = System.currentTimeMillis()
+                    tapCount++
+                    if (tapCount == 1) {
+                        lastTapTime = now
+                        // Post a delayed check: if no second tap within timeout, reset
+                        handler?.postDelayed({
+                            if (tapCount == 1) {
+                                tapCount = 0
+                            }
+                        }, DOUBLE_TAP_TIMEOUT)
+                    } else if (tapCount == 2) {
+                        if (now - lastTapTime < DOUBLE_TAP_TIMEOUT) {
+                            // Double tap confirmed — close
+                            tapCount = 0
+                            stopSelf()
+                            return@setOnTouchListener true
+                        }
+                        tapCount = 1
+                        lastTapTime = now
+                    }
+                    true
                 }
-                lastTapTime = now
             }
-            false // Allow touch to pass through
+            false
         }
 
-        overlayView = clockTextView
+        overlayView = container
         try {
             windowManager?.addView(overlayView, params)
         } catch (e: Exception) {
-            // Permission not granted or other error
+            // Permission not granted
         }
     }
 

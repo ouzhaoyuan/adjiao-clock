@@ -9,15 +9,42 @@ import android.provider.Settings
 import android.widget.Toast
 
 class MainActivity : Activity() {
+
+    companion object {
+        private const val REQUEST_OVERLAY_PERMISSION = 1001
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // No layout, no buttons - just check permission and launch overlay
         if (hasOverlayPermission()) {
             startOverlayService()
+            finish()
         } else {
             requestOverlayPermission()
+            // Don't finish — wait for onActivityResult so we can auto-start after permission grant
         }
-        finish()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // When user comes back from permission settings, check again
+        if (hasOverlayPermission()) {
+            startOverlayService()
+            finish()
+        }
+    }
+
+    @Deprecated("Deprecated in API 30 but needed for backward compatibility")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_OVERLAY_PERMISSION) {
+            if (hasOverlayPermission()) {
+                startOverlayService()
+            } else {
+                Toast.makeText(this, "需要悬浮窗权限才能使用", Toast.LENGTH_LONG).show()
+            }
+            finish()
+        }
     }
 
     private fun hasOverlayPermission(): Boolean {
@@ -30,13 +57,13 @@ class MainActivity : Activity() {
 
     private fun requestOverlayPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Toast.makeText(this, "请授权「显示在其他应用上层」", Toast.LENGTH_LONG).show()
             val intent = Intent(
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 Uri.parse("package:$packageName")
             )
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            startActivity(intent)
-            Toast.makeText(this, "请授权「显示在其他应用上层」后重新打开", Toast.LENGTH_LONG).show()
+            @Suppress("DEPRECATION")
+            startActivityForResult(intent, REQUEST_OVERLAY_PERMISSION)
         }
     }
 
